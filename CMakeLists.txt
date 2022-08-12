@@ -9,7 +9,7 @@ find_package(Boost COMPONENTS iostreams REQUIRED)
 
 catkin_package()
 
-set(cartographer_INCLUDE_INTERNAL_DIRS "/home/linh/repos/utils/src/cartographer")
+set(cartographer_INCLUDE_INTERNAL_DIRS "${PROJECT_SOURCE_DIR}/../cartographer")
 include_directories(
   include
   ${cartographer_INCLUDE_INTERNAL_DIRS}
