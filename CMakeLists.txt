@@ -1,11 +1,11 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.1)
 project(read_calibrated)
 
+set(CMAKE_CXX_STANDARD 17)
 find_package(catkin REQUIRED)
 find_package(cartographer REQUIRED)
-find_package(Protobuf 3.4.1 EXACT REQUIRED CONFIG HINTS /opt/enway/lib/protobuf-3.4.1/lib/x86_64-linux-gnu/cmake/protobuf)
-set(PROTOBUF_INCLUDE_DIRS "/opt/enway/lib/protobuf-3.4.1/include")
-set(PROTOBUF_LIBRARY "/opt/enway/lib/protobuf-3.4.1/lib/x86_64-linux-gnu/libprotobuf.a")
+find_package(Protobuf)
+find_package(Boost COMPONENTS iostreams REQUIRED)
 
 catkin_package()
 
@@ -24,6 +24,7 @@ target_link_libraries(${PROJECT_NAME}_node
   ${catkin_LIBRARIES}
   cartographer
   ${PROTOBUF_LIBRARY}
+  ${BOOST_LIBRARIES}
   )
 
 target_link_libraries(${PROJECT_NAME}_filter
