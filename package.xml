@@ -9,4 +9,8 @@
   <buildtool_depend>catkin</buildtool_depend>
   <build_depend>cartographer</build_depend>
   <exec_depend>cartographer</exec_depend>
+  <depend>roscpp</depend>
+  <depend>nav_msgs</depend>
+  <depend>pcl_conversions</depend>
+  <depend>pcl_ros</depend>
 </package>
