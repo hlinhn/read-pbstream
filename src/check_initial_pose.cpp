@@ -2,6 +2,13 @@
 #include "cartographer/io/proto_stream_deserializer.h"
 #include "cartographer/io/serialization_format_migration.h"
 #include "cartographer/mapping/id.h"
+#include "cartographer/mapping/probability_values.h"
+#include <bits/stdint-uintn.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/opencv.hpp>
 #include <string>
 
 int
@@ -31,6 +38,53 @@ main(int argc, char* argv[])
         std::cout << "==============================\n";
         auto hybrid_grid = proto.submap().submap_3d().high_resolution_hybrid_grid();
         std::cout << hybrid_grid.resolution() << std::endl;
+
+        int max_x = 0;
+        int max_y = 0;
+        int min_x = 0;
+        int min_y = 0;
+
+        for (int i = 0; i < hybrid_grid.x_indices_size(); i++)
+        {
+          if (hybrid_grid.x_indices(i) > max_x)
+          {
+            max_x = hybrid_grid.x_indices(i);
+          }
+          if (hybrid_grid.x_indices(i) < min_x)
+          {
+            min_x = hybrid_grid.x_indices(i);
+          }
+          if (hybrid_grid.y_indices(i) > max_y)
+          {
+            max_y = hybrid_grid.y_indices(i);
+          }
+          if (hybrid_grid.y_indices(i) < min_y)
+          {
+            min_y = hybrid_grid.y_indices(i);
+          }
+        }
+        std::cout << max_x << " " << min_x << " " << max_y << " " << min_y << std::endl;
+
+        cv::Mat image = cv::Mat::zeros(max_x - min_x + 1, max_y - min_y + 1, CV_8UC3);
+
+        float min = 100.0;
+        float max = 0.0;
+        for (int i = 0; i < hybrid_grid.x_indices_size(); i++)
+        {
+          auto val = cartographer::mapping::ValueToProbability(hybrid_grid.values(i));
+          image.at<cv::Vec<uint8_t, 3>>(hybrid_grid.x_indices(i) - min_x, hybrid_grid.y_indices(i) - min_y)[0] =
+              val * 255;
+          if (val > max)
+          {
+            max = val;
+          }
+          if (val < min)
+          {
+            min = val;
+          }
+        }
+        std::cout << max << " " << min << std::endl;
+        cv::imwrite("/home/linh/test_hybrid.png", image);
         break;
       }
     }
