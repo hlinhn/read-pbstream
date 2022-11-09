@@ -1,6 +1,6 @@
 # Parse pbstream file from Google Cartographer
 
-This is a work in progress.
+A collection of tools to work with Google cartographer's pbstream map file. This is a work in progress.
 
 ## How to build
 
