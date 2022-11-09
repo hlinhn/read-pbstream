@@ -2,9 +2,11 @@
 #include "cartographer/common/lua_parameter_dictionary.h"
 #include "cartographer/common/thread_pool.h"
 #include "cartographer/io/internal/mapping_state_serialization.h"
+#include "cartographer/mapping/id.h"
 #include "cartographer/mapping/internal/3d/pose_graph_3d.h"
 #include "cartographer/mapping/map_builder.h"
 #include "cartographer/mapping/proto/map_builder_options.pb.h"
+#include "cartographer/mapping/proto/pose_graph.pb.h"
 #include "cartographer/mapping/proto/trajectory_builder_options.pb.h"
 #include <cartographer/io/proto_stream.h>
 #include <cartographer/io/proto_stream_deserializer.h>
@@ -41,6 +43,8 @@ main(int argc, char* argv[])
   int exclude = std::stoi(argv[2]);
   int trajectory_id = std::stoi(argv[3]);
 
+  std::cout << "Exclude from submap " << exclude << " in trajectory " << trajectory_id << std::endl;
+
   std::string state_filename(argv[1]);
   cartographer::io::ProtoStreamReader stream(state_filename);
   cartographer::io::ProtoStreamDeserializer deserializer(&stream);
@@ -48,24 +52,31 @@ main(int argc, char* argv[])
   mapping::proto::PoseGraph pose_graph_proto = deserializer.pose_graph();
   const auto& all_builder_options_proto = deserializer.all_trajectory_builder_options();
 
+  // We need to either remap trajectory id or make sure trajectory_builder_options here can be sort of a map between
+  // trajectory id and options
   std::vector<mapping::proto::TrajectoryBuilderOptionsWithSensorIds> trajectory_builder_options;
+  int max_trajectory_id = 0;
+  for (int i = 0; i < pose_graph_proto.trajectory_size(); ++i)
+  {
+    auto& trajectory_proto = *pose_graph_proto.mutable_trajectory(i);
+    if (trajectory_proto.trajectory_id() > max_trajectory_id)
+    {
+      max_trajectory_id = trajectory_proto.trajectory_id();
+    }
+  }
+
+  trajectory_builder_options.resize(max_trajectory_id + 1);
   for (int i = 0; i < pose_graph_proto.trajectory_size(); ++i)
   {
     auto& trajectory_proto = *pose_graph_proto.mutable_trajectory(i);
     const auto& options_with_sensor_ids_proto = all_builder_options_proto.options_with_sensor_ids(i);
-    trajectory_builder_options.push_back(options_with_sensor_ids_proto);
-  }
-
-  for (auto& constraint_proto : *pose_graph_proto.mutable_constraint())
-  {
-    constraint_proto.mutable_submap_id()->set_trajectory_id(constraint_proto.submap_id().trajectory_id());
-    constraint_proto.mutable_node_id()->set_trajectory_id(constraint_proto.node_id().trajectory_id());
+    trajectory_builder_options[trajectory_proto.trajectory_id()] = options_with_sensor_ids_proto;
+    pose_graph.FreezeTrajectory(trajectory_proto.trajectory_id());
   }
 
   mapping::MapById<mapping::SubmapId, transform::Rigid3d> submap_poses;
   int submap_count_orig = 0;
   int submap_count_new = 0;
-  transform::Rigid3d excluded_submap;
   std::set<int> excluded_submaps;
   for (const mapping::proto::Trajectory& trajectory_proto : pose_graph_proto.trajectory())
   {
@@ -74,52 +85,51 @@ main(int argc, char* argv[])
       submap_count_orig++;
       if (trajectory_proto.trajectory_id() == trajectory_id && submap_proto.submap_index() >= exclude)
       {
-        if (submap_proto.submap_index() == exclude)
-        {
-          excluded_submap = transform::ToRigid3(submap_proto.pose());
-        }
         excluded_submaps.insert(submap_proto.submap_index());
+        // std::cout << "Excluding " << trajectory_proto.trajectory_id() << " " << submap_proto.submap_index()
+        //           << std::endl;
         continue;
       }
+      // std::cout << "Adding " << trajectory_proto.trajectory_id() << " " << submap_proto.submap_index() << std::endl;
       submap_count_new++;
       submap_poses.Insert(mapping::SubmapId {trajectory_proto.trajectory_id(), submap_proto.submap_index()},
                           transform::ToRigid3(submap_proto.pose()));
     }
   }
 
-  std::cout << submap_count_orig << " " << submap_count_new << std::endl;
+  std::cout << "Submap count: " << submap_count_orig << " " << submap_count_new << std::endl;
+  // std::cout << "Submap poses count: " << submap_poses.size() << std::endl;
 
-  double longest_distance = 15.0;
-  int node_id = -1;
   mapping::MapById<mapping::NodeId, transform::Rigid3d> node_poses;
   std::set<int> excluded_nodes;
-  for (const mapping::proto::Trajectory& trajectory_proto : pose_graph_proto.trajectory())
+
+  for (const auto& constraint : pose_graph_proto.constraint())
   {
-    if (trajectory_proto.trajectory_id() == trajectory_id)
+    if (constraint.tag() != mapping::proto::PoseGraph::Constraint::INTRA_SUBMAP)
     {
-      for (const mapping::proto::Trajectory::Node& node_proto : trajectory_proto.node())
-      {
-        double distance = (transform::ToRigid3(node_proto.pose()).translation() - excluded_submap.translation()).norm();
-        if (distance < longest_distance)
-        {
-          longest_distance = distance;
-          node_id = node_proto.node_index();
-        }
-      }
+      continue;
     }
+    if (constraint.submap_id().trajectory_id() != trajectory_id)
+    {
+      continue;
+    }
+    if (excluded_submaps.count(constraint.submap_id().submap_index()) == 0)
+    {
+      continue;
+    }
+    excluded_nodes.insert(constraint.node_id().node_index());
   }
 
   int node_count = 0;
   int node_count_new = 0;
-  std::cout << longest_distance << " " << node_id << std::endl;
+
   for (const mapping::proto::Trajectory& trajectory_proto : pose_graph_proto.trajectory())
   {
     for (const mapping::proto::Trajectory::Node& node_proto : trajectory_proto.node())
     {
       node_count += 1;
-      if (trajectory_proto.trajectory_id() == trajectory_id && node_proto.node_index() >= node_id)
+      if (trajectory_proto.trajectory_id() == trajectory_id && excluded_nodes.count(node_proto.node_index()) > 0)
       {
-        excluded_nodes.insert(node_proto.node_index());
         continue;
       }
       node_count_new++;
@@ -127,21 +137,8 @@ main(int argc, char* argv[])
                         transform::ToRigid3(node_proto.pose()));
     }
   }
-  std::cout << node_count << " " << node_count_new << std::endl;
-  auto mutable_constraint = pose_graph_proto.constraint();
-  std::cout << mutable_constraint.size() << " ";
-  mutable_constraint.erase(std::remove_if(mutable_constraint.begin(),
-                                          mutable_constraint.end(),
-                                          [trajectory_id, excluded_nodes, excluded_submaps](const auto& cons) {
-                                            bool submap_in =
-                                                cons.submap_id().trajectory_id() == trajectory_id
-                                                && excluded_submaps.count(cons.submap_id().submap_index()) > 0;
-                                            bool node_in = cons.node_id().trajectory_id() == trajectory_id
-                                                           && excluded_nodes.count(cons.node_id().node_index()) > 0;
-                                            return submap_in || node_in;
-                                          }),
-                           mutable_constraint.end());
-  std::cout << mutable_constraint.size() << std::endl;
+  std::cout << "Node count: " << node_count << " " << node_count_new << std::endl;
+  // std::cout << "Node poses count: " << node_poses.size() << std::endl;
 
   // Set global poses of landmarks.
   for (const auto& landmark : pose_graph_proto.landmark_poses())
@@ -149,8 +146,6 @@ main(int argc, char* argv[])
     pose_graph.SetLandmarkPose(landmark.landmark_id(), transform::ToRigid3(landmark.global_pose()), true);
   }
 
-  mapping::MapById<mapping::SubmapId, mapping::proto::Submap> submap_id_to_submap;
-  mapping::MapById<mapping::NodeId, mapping::proto::Node> node_id_to_node;
   SerializedData proto;
   while (deserializer.ReadNextSerializedData(&proto))
   {
@@ -170,12 +165,16 @@ main(int argc, char* argv[])
         {
           break;
         }
-        if (proto.submap().has_submap_3d())
+        const mapping::SubmapId submap_id {proto.submap().submap_id().trajectory_id(),
+                                           proto.submap().submap_id().submap_index()};
+        try
         {
-          proto.mutable_submap()->mutable_submap_id()->set_trajectory_id(proto.submap().submap_id().trajectory_id());
-          submap_id_to_submap.Insert(
-              mapping::SubmapId {proto.submap().submap_id().trajectory_id(), proto.submap().submap_id().submap_index()},
-              proto.submap());
+          pose_graph.AddSubmapFromProto(submap_poses.at(submap_id), proto.submap());
+        }
+        catch (std::out_of_range& e)
+        {
+          std::cout << "Requested submap id is " << submap_id.trajectory_id << " " << submap_id.submap_index
+                    << std::endl;
         }
         break;
       }
@@ -187,41 +186,37 @@ main(int argc, char* argv[])
           break;
         }
 
-        proto.mutable_node()->mutable_node_id()->set_trajectory_id(proto.node().node_id().trajectory_id());
-        const mapping::NodeId node_id(proto.node().node_id().trajectory_id(), proto.node().node_id().node_index());
-        const transform::Rigid3d& node_pose = node_poses.at(node_id);
-        pose_graph.AddNodeFromProto(node_pose, proto.node());
-        node_id_to_node.Insert(node_id, proto.node());
-
+        const mapping::NodeId node_id {proto.node().node_id().trajectory_id(), proto.node().node_id().node_index()};
+        try
+        {
+          const transform::Rigid3d& node_pose = node_poses.at(node_id);
+          pose_graph.AddNodeFromProto(node_pose, proto.node());
+        }
+        catch (std::out_of_range& e)
+        {
+          std::cout << "Requested node id is " << node_id.trajectory_id << " " << node_id.node_index << std::endl;
+        }
         break;
       }
       case SerializedData::kTrajectoryData:
       {
-        proto.mutable_trajectory_data()->set_trajectory_id(proto.trajectory_data().trajectory_id());
         pose_graph.SetTrajectoryDataFromProto(proto.trajectory_data());
         break;
       }
       case SerializedData::kImuData:
       {
-        pose_graph.AddImuData(proto.imu_data().trajectory_id(), sensor::FromProto(proto.imu_data().imu_data()));
         break;
       }
       case SerializedData::kOdometryData:
       {
-        pose_graph.AddOdometryData(proto.odometry_data().trajectory_id(),
-                                   sensor::FromProto(proto.odometry_data().odometry_data()));
         break;
       }
       case SerializedData::kFixedFramePoseData:
       {
-        pose_graph.AddFixedFramePoseData(proto.fixed_frame_pose_data().trajectory_id(),
-                                         sensor::FromProto(proto.fixed_frame_pose_data().fixed_frame_pose_data()));
         break;
       }
       case SerializedData::kLandmarkData:
       {
-        pose_graph.AddLandmarkData(proto.landmark_data().trajectory_id(),
-                                   sensor::FromProto(proto.landmark_data().landmark_data()));
         break;
       }
       default:
@@ -229,15 +224,32 @@ main(int argc, char* argv[])
     }
   }
 
-  for (const auto& submap_id_submap : submap_id_to_submap)
+  std::cout << "Add constraints\n";
+  for (const auto& constraint : pose_graph_proto.constraint())
   {
-    pose_graph.AddSubmapFromProto(submap_poses.at(submap_id_submap.id), submap_id_submap.data);
+    if (constraint.tag() != mapping::proto::PoseGraph::Constraint::INTRA_SUBMAP)
+    {
+      continue;
+    }
+    if (constraint.submap_id().trajectory_id() == trajectory_id
+        && excluded_submaps.count(constraint.submap_id().submap_index()) > 0)
+    {
+      continue;
+    }
+    if (constraint.node_id().trajectory_id() == trajectory_id
+        && excluded_nodes.count(constraint.node_id().node_index()) > 0)
+    {
+      continue;
+    }
+    pose_graph.AddNodeToSubmap(
+        mapping::NodeId {constraint.node_id().trajectory_id(), constraint.node_id().node_index()},
+        mapping::SubmapId {constraint.submap_id().trajectory_id(), constraint.submap_id().submap_index()});
   }
 
-  pose_graph.AddSerializedConstraints(mapping::FromProto(mutable_constraint));
-
+  std::cout << "Pose graph has " << pose_graph.GetTrajectoryData().size() << " trajectory" << std::endl;
+  // std::cout << "Trajectory builder options has " << trajectory_builder_options.size() << std::endl;
   io::ProtoStreamWriter output(argv[4]);
-
+  std::cout << "Writing file\n";
   io::WritePbStream(pose_graph, trajectory_builder_options, &output, true);
 
   return 0;
