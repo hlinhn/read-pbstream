@@ -20,6 +20,8 @@ find_package(cartographer REQUIRED)
 find_package(Protobuf)
 find_package(Boost COMPONENTS iostreams REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(yaml-cpp REQUIRED)
+set(YAML_CPP_LIBS yaml-cpp)
 
 catkin_package(
   INCLUDE_DIRS
@@ -37,6 +39,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${PROTOBUF_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  ${YAML_CPP_INCLUDE_DIR}
 )
 
 add_executable(${PROJECT_NAME}_node src/read_calibrated.cpp)
@@ -55,6 +58,7 @@ target_link_libraries(${PROJECT_NAME}_filter
   ${catkin_LIBRARIES}
   cartographer
   ${PROTOBUF_LIBRARY}
+  ${YAML_CPP_LIBS}
   )
 
 target_link_libraries(${PROJECT_NAME}_initial
