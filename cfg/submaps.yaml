@@ -1,0 +1,11 @@
+submaps:
+  - id: 1
+    ranges:
+      - {start: 2, end: 354}
+  - id: 0
+    ranges:
+      - {start: 32, end: 35}
+  - id: 5
+    ranges:
+      - {start: 44, end: 49}
+      - {start: 55, end: 60}

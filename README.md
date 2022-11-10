@@ -18,5 +18,5 @@ It also needs `Protobuf` library.
 There are 3 executables
 
 - `read_calibrated_node` reads out IMU calibration and GPS offset results
-- `read_calibrated_filter` filters out submaps in the trajectory ID supplied, whose submap ID is larger than the submap ID supplied
+- `read_calibrated_filter` filters out submaps in the trajectory ID supplied, whose submap ID is in the range supplied by a yaml file
 - `read_calibrated_convert` converts one trajectory's poses to a ROS bag file
