@@ -17,13 +17,20 @@ convertFromTrajectoryTime(int64_t timestamp)
   return ros_time;
 }
 
+std::string
+getRootFolder(std::string filename)
+{
+  auto index = filename.find_last_of("/");
+  return filename.substr(0, index + 1);
+}
+
 int
 main(int argc, char* argv[])
 {
   if (argc < 3)
   {
-    std::cerr << "Read trajectory from pbstream file and convert it to bag file of positions. Supply a filename and "
-                 "the trajectory ID\n";
+    std::cerr << "Read a trajectory from pbstream file and convert it to bag file of positions. Supply a filename and "
+                 "the trajectory ID. Save to the folder containing source pbstream file.\n";
     return 1;
   }
 
@@ -35,7 +42,9 @@ main(int argc, char* argv[])
   auto trajectory = pose_graph.trajectory(trajectory_id);
 
   rosbag::Bag bag;
-  bag.open("/home/linh/Downloads/bags/convert_from_trajectory.bag", rosbag::bagmode::Write);
+  std::string folder = getRootFolder(state_filename);
+  folder.append("convert_from_trajectory.bag");
+  bag.open(folder, rosbag::bagmode::Write);
   int count_sub = 0;
   nav_msgs::Odometry odom;
   odom.header.frame_id = "map";

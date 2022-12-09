@@ -175,17 +175,13 @@ main(int argc, char* argv[])
       if (excludeThis(trajectory_proto.trajectory_id(), submap_proto.submap_index(), exclude_list))
       {
         excluded_submaps.insert({trajectory_proto.trajectory_id(), submap_proto.submap_index()});
-        // std::cout << "Excluding " << trajectory_proto.trajectory_id() << " " << submap_proto.submap_index()
-        //           << std::endl;
         continue;
       }
-      // std::cout << "Adding " << trajectory_proto.trajectory_id() << " " << submap_proto.submap_index() << std::endl;
       submap_count_new++;
     }
   }
 
   std::cout << "Submap count: " << submap_count_orig << " " << submap_count_new << std::endl;
-  // std::cout << "Submap poses count: " << submap_poses.size() << std::endl;
 
   mapping::MapById<mapping::NodeId, transform::Rigid3d> node_poses;
   std::set<mapping::NodeId> excluded_nodes;
@@ -230,7 +226,6 @@ main(int argc, char* argv[])
     }
   }
   std::cout << "Node count: " << node_count << " " << node_count_new << std::endl;
-  // std::cout << "Node poses count: " << node_poses.size() << std::endl;
 
   // Set global poses of landmarks.
   for (const auto& landmark : pose_graph_proto.landmark_poses())
@@ -336,7 +331,6 @@ main(int argc, char* argv[])
   }
 
   std::cout << "Pose graph has " << pose_graph.GetTrajectoryData().size() << " trajectory" << std::endl;
-  // std::cout << "Trajectory builder options has " << trajectory_builder_options.size() << std::endl;
   io::ProtoStreamWriter output(argv[3]);
   std::cout << "Writing file\n";
   io::WritePbStream(pose_graph, trajectory_builder_options, &output, true);
